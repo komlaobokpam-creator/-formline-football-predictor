@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: formline-football-predictor
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: FOOTBALL_DATA_TOKEN
+        sync: false
