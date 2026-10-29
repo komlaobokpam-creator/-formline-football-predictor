@@ -39,6 +39,11 @@ function send(res, status, body, type = 'application/json; charset=utf-8') {
   res.end(type.startsWith('application/json') ? JSON.stringify(body) : body);
 }
 
+function records(payload, key) {
+  const candidates = [payload?.data, payload?.data?.[key], payload?.data?.data, payload?.data?.data?.[key], payload?.[key], payload?.response];
+  return candidates.find(Array.isArray) || [];
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
   try {
@@ -52,7 +57,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, page, 'text/html; charset=utf-8');
     }
     if (url.pathname === '/api/leagues') {
-      return send(res, 200, await provider('/leagues?limit=100'));
+      return send(res, 200, await provider('/leagues'));
     }
     if (url.pathname === '/api/seasons') {
       const league = url.searchParams.get('league_id');
@@ -64,8 +69,8 @@ const server = http.createServer(async (req, res) => {
       const season = url.searchParams.get('season_id');
       if (!/^\d+$/.test(league || '') || !/^\d+$/.test(season || '')) return send(res, 400, { error: 'Invalid league or season.' });
       const payload = await provider(`/leagues/${league}/teams?season_id=${season}&limit=100`);
-      const list = Array.isArray(payload.data) ? payload.data : payload.data?.teams || [];
-      return send(res, 200, { teams: list.map(t => ({ id: t.team_id ?? t.id, name: t.team_name ?? t.name, shortName: t.short_name ?? t.team_name ?? t.name, crest: t.team_logo ?? t.crest ?? '' })).filter(t => t.id && t.name) });
+      const list = records(payload, 'teams');
+      return send(res, 200, { teams: list.map(t => ({ id: t.team_id ?? t.id ?? t.team?.team_id ?? t.team?.id, name: t.team_name ?? t.name ?? t.team?.team_name ?? t.team?.name, shortName: t.short_name ?? t.team_name ?? t.name ?? t.team?.short_name ?? t.team?.team_name ?? t.team?.name, crest: t.team_logo ?? t.crest ?? t.team?.team_logo ?? t.team?.crest ?? '' })).filter(t => t.id != null && t.name) });
     }
     if (url.pathname === '/api/recent') {
       const team = url.searchParams.get('team_id');
@@ -74,7 +79,7 @@ const server = http.createServer(async (req, res) => {
       const limit = Math.min(10, Math.max(1, Number(url.searchParams.get('limit')) || 5));
       if (!/^\d+$/.test(team || '') || !/^\d+$/.test(competition || '') || !/^\d+$/.test(season || '')) return send(res, 400, { error: 'Invalid team, league, or season.' });
       const payload = await provider(`/fixtures/results?league_id=${competition}&season_id=${season}&team_id=${team}&limit=${limit}`);
-      const list = Array.isArray(payload.data) ? payload.data : payload.data?.matches || [];
+      const list = records(payload, 'matches');
       const matches = list.filter(m => ['complete', 'finished', 'completed'].includes(String(m.status).toLowerCase()) && m.score?.home !== null && m.score?.away !== null).map(m => ({ id: m.match_id, status: 'complete', date: m.match_date, homeTeam: { id: m.home_team.team_id, name: m.home_team.team_name, shortName: m.home_team.short_name || m.home_team.team_name }, awayTeam: { id: m.away_team.team_id, name: m.away_team.team_name, shortName: m.away_team.short_name || m.away_team.team_name }, score: { fullTime: { home: Number(m.score.home), away: Number(m.score.away) } } }));
       return send(res, 200, { matches });
     }
